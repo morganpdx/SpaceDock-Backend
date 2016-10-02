@@ -55,7 +55,7 @@ def add_feature(gameshort):
         return {'error': True, 'reasons': ['The mod is already featured']}, 400
     feature = Featured(Mod.query.filter(Mod.id == int(modid)).first())
     db.add(feature)
-    db.commit()
+    db.flush()
     return {'error': False, 'count': 1, 'data': feature_info(feature)}
 
 @route('/api/mods/featured/remove/<gameshort>', methods=['POST'])
