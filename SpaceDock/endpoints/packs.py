@@ -41,26 +41,30 @@ def packs_add():
     gameshort = request.json.get('gameshort')
 
     # Check the vars
-    errors = list()
+    errors = ()
+    codes = ()
     if not name:
-        errors.append('Invalid mod name.')
+        errors.append('Invalid modlist name.')
+        codes.append('2137')
     if ModList.query.filter(ModList.name == name).first():
-        errors.append('A modlist with this name does already exist.')
+        errors.append('A modlist with this name already exists.')
+        codes.append('2025')
     if not gameshort or not game_id(gameshort):
         errors.append('Invalid gameshort.')
+        codes.append('2125')
     if any(errors):
-        return {'error': True, 'reasons': errors}, 400
+        return {'error': True, 'reasons': errors, 'codes': codes}, 400
 
     # Make the new list
     pack = ModList(name, Game.query.filter(Game.short == gameshort).first(), current_user)
     db.add(pack)
     current_user.add_roles(name)    
     role = Role.query.filter(Role.name == name).first()
-    role.add_abilities('packs-edit', 'mods-remove')
+    role.add_abilities('packs-edit', 'packs-remove')
     role.add_param('packs-edit', 'packid', str(pack.id))
     role.add_param('packs-remove', 'name', name)    
     db.add(role)
-    db.commit()
+    db.flush()
     return {'error': False, 'count': 1, 'data': pack_info(pack)}
 
 @route('/api/packs/<gameshort>/<packid>/edit', methods=['POST'])
@@ -80,7 +84,9 @@ def packs_edit(gameshort, packid):
     code = edit_object(pack, request.json)
 
     # Error check
-    if code == 2:
+    if code == 3:
+        return {'error': True, 'reasons': ['The value you submitted is invalid'], 'codes': ['2180']}, 400
+    elif code == 2:
         return {'error': True, 'reasons': ['You tried to edit a value that doesn\'t exist.'], 'codes': ['3090']}, 400
     elif code == 1:
         return {'error': True, 'reasons': ['You tried to edit a value that is marked as read-only.'], 'codes': ['3095']}, 400
@@ -98,24 +104,32 @@ def packs_add_mod(gameshort, packid):
     mod_id = request.json.get('modid')
 
     # Error check
-    errors = list()
-    if not mod_id.isdigit() or not Mod.query.filter(Mod.id == int(mod_id)).first():
+    errors = ()
+    codes = ()
+    if not isinstance(mod_id, int) or not Mod.query.filter(Mod.id == mod_id).first():
         errors.append('The mod ID is invalid')
+        codes.append('2130')
+    elif isinstance(mod_id, int) and not Mod.query.filter(Mod.published).filter(Mod.id == mod_id).first():
+        errors.append('The mod is not published.')
+        codes.append('3020')
     if not packid.isdigit() or not ModList.query.filter(ModList.id == int(packid)).first():
         errors.append('The pack ID is invalid')
-    if not ModList.query.filter(ModList.id == int(packid)).filter(ModList.game_id == game_id(gameshort)).first():
+        codes.append('2135')
+    if packid.isdigit() and not ModList.query.filter(ModList.id == int(packid)).filter(ModList.game_id == game_id(gameshort)).first():
         errors.append('The gameshort is invalid')
-    if ModListItem.query.filter(ModListItem.mod_id == int(mod_id)).filter(ModListItem.mod_list_id == int(packid)).first():
+        codes.append('2125')
+    if isinstance(mod_id, int) and packid.isdigit() and ModListItem.query.filter(ModListItem.mod_id == mod_id).filter(ModListItem.mod_list_id == int(packid)).first():
         errors.append('The specified mod was already added to the modlist')
+        codes.append('2030')
     if any(errors):
-        return {'error': True, 'reasons': errors}, 400
+        return {'error': True, 'reasons': errors, 'codes': codes}, 400
 
     # Get the list
     pack = ModList.query.filter(ModList.id == int(packid)).first()
-    moditem = ModListItem(mod=Mod.query.filter(Mod.id == int(mod_id)).first(), modlist=pack)
+    moditem = ModListItem(mod=Mod.query.filter(Mod.id == mod_id).first(), modlist=pack)
 
     db.add(moditem)
-    db.commit()
+    db.flush()
 
     return {'error': False}
 
@@ -129,21 +143,26 @@ def packs_del_mod(gameshort, packid):
     mod_id = request.json.get('modid')
 
     # Error check
-    errors = list()
-    if not mod_id.isdigit() or not Mod.query.filter(Mod.id == int(mod_id)).first():
+    errors = ()
+    codes = ()
+    if not isinstance(mod_id, int) or not Mod.query.filter(Mod.id == mod_id).first():
         errors.append('The mod ID is invalid')
+        codes.append('2130')
     if not packid.isdigit() or not ModList.query.filter(ModList.id == int(packid)).first():
         errors.append('The pack ID is invalid')
+        codes.append('2135')
     if not ModList.query.filter(ModList.id == int(packid)).filter(ModList.game_id == game_id(gameshort)).first():
         errors.append('The gameshort is invalid')
-    if not ModListItem.query.filter(ModListItem.mod_id == int(mod_id)).filter(ModListItem.mod_list_id == int(packid)).first():
+        codes.append('2125')
+    if not ModListItem.query.filter(ModListItem.mod_id == mod_id).filter(ModListItem.mod_list_id == int(packid)).first():
         errors.append('The specified mod is not included in the modlist')
+        codes.append('3053')
     if any(errors):
-        return {'error': True, 'reasons': errors}, 400
+        return {'error': True, 'reasons': errors, 'codes': codes}, 400
 
     # Get the list
     pack = ModList.query.filter(ModList.id == int(packid)).first()
-    moditem = ModListItem.query.filter(ModListItem.mod_list_id == int(packid)).filter(ModListItem.mod_id == int(mod_id)).first()
+    moditem = ModListItem.query.filter(ModListItem.mod_list_id == int(packid)).filter(ModListItem.mod_id == mod_id).first()
 
     db.delete(moditem)
 
